@@ -7,8 +7,11 @@
    =========================================================== */
 (function(){
   const AUTH_KEY = 'tipinsure_tracker_auth';
-  // SHA-256 of the passcode
-  const PASS_HASH = '53446552be9594329a3a9229b6a581e96545bedffe8818e4e1c9c966cd01eb15';
+  // SHA-256 of accepted passcodes (any one works)
+  const PASS_HASHES = [
+    '53446552be9594329a3a9229b6a581e96545bedffe8818e4e1c9c966cd01eb15', // 560105
+    'bdaa9975de4fc82fafbc7ac1ef091dcb5bb982403f1473b401df18808ddc6076', // tezt
+  ];
 
   async function sha256(text){
     const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
@@ -30,7 +33,7 @@
       const val = (input.value || '').trim();
       if (!val){ input.focus(); return; }
       const hash = await sha256(val);
-      if (hash === PASS_HASH){
+      if (PASS_HASHES.includes(hash)){
         try { localStorage.setItem(AUTH_KEY, 'ok'); } catch(e){}
         unlock();
       } else {
