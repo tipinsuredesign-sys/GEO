@@ -217,9 +217,49 @@
   @media (prefers-reduced-motion: reduce){
     *,*::before,*::after{animation-duration:.001ms!important;transition-duration:.001ms!important}
   }
+
+  /* Login gate */
+  html.locked body > *:not(#gate){display:none!important}
+  #gate{position:fixed;inset:0;z-index:1000;display:none;place-items:center;padding:20px;
+    background:linear-gradient(135deg,var(--primary-900),var(--primary-700))}
+  html.locked #gate{display:grid}
+  .gate-card{background:var(--surface);border-radius:var(--r-lg);box-shadow:var(--shadow-lg);
+    padding:36px 32px;max-width:380px;width:100%;text-align:center}
+  .gate-card .lock{font-size:34px}
+  .gate-card h2{font-size:19px;font-weight:800;margin:12px 0 4px;color:var(--ink);letter-spacing:-.01em}
+  .gate-card p{font-size:13px;color:var(--ink-soft);margin-bottom:22px}
+  .gate-card input{width:100%;background:var(--surface);border:1px solid var(--line);color:var(--ink);
+    padding:13px 16px;border-radius:999px;font-size:16px;font-family:inherit;text-align:center;
+    letter-spacing:.15em}
+  .gate-card input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-50)}
+  .gate-card button{width:100%;margin-top:12px;background:var(--accent);color:#fff;border:none;
+    padding:13px;border-radius:999px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;
+    box-shadow:0 8px 20px rgba(225,38,27,.28);transition:all .3s}
+  .gate-card button:hover{background:var(--accent-600)}
+  .gate-err{color:var(--accent);font-size:12.5px;margin-top:12px;min-height:16px;font-weight:600}
 </style>
+<script>
+  // Lock immediately (before body paints) unless already authenticated this browser
+  (function(){
+    try {
+      if (localStorage.getItem('tipinsure_tracker_auth') !== 'ok') {
+        document.documentElement.classList.add('locked');
+      }
+    } catch(e){ document.documentElement.classList.add('locked'); }
+  })();
+</script>
 </head>
 <body>
+<div id="gate">
+  <div class="gate-card">
+    <div class="lock">🔒</div>
+    <h2>TIPINSURE SEO Tracker</h2>
+    <p>กรุณาใส่รหัสผ่านเพื่อเข้าใช้งาน</p>
+    <input type="password" id="gatePass" inputmode="numeric" placeholder="••••••" autocomplete="off">
+    <button id="gateBtn">เข้าสู่ระบบ</button>
+    <div class="gate-err" id="gateErr"></div>
+  </div>
+</div>
 <header>
   <div class="wrap">
     <div class="brand">
@@ -342,6 +382,7 @@
 <div class="toast" id="toast"></div>
 <footer>ข้อมูลบันทึกในเบราว์เซอร์นี้ (localStorage) · Export JSON เพื่อแบ็กอัป/แชร์ข้ามเครื่อง</footer>
 
+<script src="auth.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
