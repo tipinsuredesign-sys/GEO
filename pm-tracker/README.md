@@ -6,6 +6,27 @@
 เปิดไฟล์ `index.html` ด้วยเบราว์เซอร์ (ดับเบิลคลิกได้เลย) — ไม่ต้องติดตั้งอะไร ไม่ต้องมีเซิร์ฟเวอร์
 
 > ต้องเก็บ `index.html` กับ `app.js` ไว้ในโฟลเดอร์เดียวกัน
+> ฟีเจอร์ "ดูข้อมูล Excel" ต้องเปิดผ่าน web server (localhost หรือ Vercel) ไม่ใช่ file://
+
+## Deploy ขึ้น Vercel
+tracker นี้เป็น static site ล้วน deploy บน Vercel ได้เลยโดยไม่ต้อง build
+
+**วิธีที่แนะนำ (ผ่าน dashboard):**
+1. ไปที่ https://vercel.com → New Project → Import repo `tipinsuredesign-sys/GEO`
+2. ในหน้า Configure Project ตั้ง **Root Directory = `pm-tracker`** (สำคัญ เพราะเว็บอยู่ในโฟลเดอร์ย่อย)
+3. Framework Preset: **Other** (ไม่ต้องมี build command / output = ตัวโฟลเดอร์เอง)
+4. กด Deploy — เสร็จแล้วได้ URL เช่น `https://geo-xxx.vercel.app`
+
+**หรือผ่าน Vercel CLI:**
+```
+npm i -g vercel
+cd pm-tracker
+vercel            # ครั้งแรก: ตอบ scope/ชื่อโปรเจกต์
+vercel --prod     # deploy production
+```
+(รันจากในโฟลเดอร์ `pm-tracker` โดยตรง จึงไม่ต้องตั้ง Root Directory)
+
+หมายเหตุ: `server.cjs` เป็น dev server สำหรับรัน local เท่านั้น ถูกใส่ใน `.vercelignore` แล้ว ไม่ถูก deploy
 
 ## ฟีเจอร์
 - **Dashboard** สรุปความคืบหน้ารวม, งาน HIGH ที่เสร็จแล้ว, และ progress bar แยกสถานะ

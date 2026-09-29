@@ -1,0 +1,2 @@
+# Dev-only Node server, not needed for static hosting on Vercel
+server.cjs

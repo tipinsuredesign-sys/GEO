@@ -10,3 +10,7 @@ node_modules/
 tipinsure-seo-tracker-*.json
 tipinsure-seo-report-*.html
 tipinsure-seo-report-*.csv
+
+# Local artifacts (zips, shortcuts)
+*.zip
+*.lnk
