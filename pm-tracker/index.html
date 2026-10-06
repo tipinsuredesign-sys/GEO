@@ -237,14 +237,31 @@
     box-shadow:0 8px 20px rgba(225,38,27,.28);transition:all .3s}
   .gate-card button:hover{background:var(--accent-600)}
   .gate-err{color:var(--accent);font-size:12.5px;margin-top:12px;min-height:16px;font-weight:600}
+  .gate-roletag{display:inline-block;padding:5px 14px;border-radius:999px;font-size:12px;font-weight:700;margin-bottom:14px}
+  .gate-roletag.full{background:var(--green-soft);color:var(--green)}
+  .gate-roletag.view{background:var(--amber-soft);color:var(--amber)}
+  #stepName input{letter-spacing:0;text-align:left}
+  #stepName button{background:var(--primary);box-shadow:0 8px 20px rgba(30,34,170,.28)}
+  #stepName button:hover{background:var(--primary-700)}
+
+  /* Read-only mode */
+  html.readonly .write-only{display:none!important}
+  .status-static{cursor:default}
+  .t-done-at{font-size:11px;color:var(--green);font-weight:600;white-space:nowrap}
+
+  /* Live indicator */
+  .live-dot{width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;animation:livepulse 2s infinite}
+  @keyframes livepulse{0%,100%{opacity:1}50%{opacity:.3}}
 </style>
 <script>
   // Lock immediately (before body paints) unless already authenticated this browser
   (function(){
     try {
-      if (localStorage.getItem('tipinsure_tracker_auth') !== 'ok') {
+      var a = localStorage.getItem('tipinsure_tracker_auth');
+      if (a !== 'ok' && a !== 'full' && a !== 'view') {
         document.documentElement.classList.add('locked');
       }
+      if (a === 'view') document.documentElement.classList.add('readonly');
     } catch(e){ document.documentElement.classList.add('locked'); }
   })();
 </script>
@@ -254,17 +271,25 @@
   <div class="gate-card">
     <div class="lock">🔒</div>
     <h2>TIPINSURE SEO Tracker</h2>
-    <p>กรุณาใส่รหัสผ่านเพื่อเข้าใช้งาน</p>
-    <input type="password" id="gatePass" inputmode="numeric" placeholder="••••••" autocomplete="off">
-    <button id="gateBtn">เข้าสู่ระบบ</button>
-    <div class="gate-err" id="gateErr"></div>
+    <div id="stepPass">
+      <p>กรุณาใส่รหัสผ่านเพื่อเข้าใช้งาน</p>
+      <input type="password" id="gatePass" placeholder="••••••" autocomplete="off">
+      <button id="gateBtn">เข้าสู่ระบบ</button>
+      <div class="gate-err" id="gateErr"></div>
+    </div>
+    <div id="stepName" style="display:none">
+      <div class="gate-roletag" id="gateRoleTag"></div>
+      <p>ใส่ชื่อของคุณ (จะแสดงเมื่อคุณอัปเดตงาน)</p>
+      <input type="text" id="gateName" placeholder="เช่น คุณเอ, นัท, Primal Team" autocomplete="name">
+      <button id="gateNameBtn">เข้าใช้งาน</button>
+    </div>
   </div>
 </div>
 <header>
   <div class="wrap">
     <div class="brand">
       <h1>TIPINSURE SEO <span class="dot">·</span> Project Tracker</h1>
-      <p>ติดตามงานแก้ Technical Onsite Audit — www.tipinsure.com</p>
+      <p><span class="live-dot"></span> ติดตามงานแก้ Technical Onsite Audit — www.tipinsure.com</p>
     </div>
     <div class="toolbar">
       <div class="menu-wrap">
@@ -282,8 +307,8 @@
         </div>
       </div>
       <button class="btn" id="btnExport">⬇ Export JSON</button>
-      <button class="btn" id="btnImport">⬆ Import JSON</button>
-      <button class="btn danger" id="btnReset">↺ Reset</button>
+      <button class="btn write-only" id="btnImport">⬆ Import JSON</button>
+      <button class="btn danger write-only" id="btnReset">↺ Reset</button>
       <input type="file" id="fileImport" accept="application/json" hidden>
     </div>
   </div>
@@ -380,8 +405,9 @@
 </div>
 
 <div class="toast" id="toast"></div>
-<footer>ข้อมูลบันทึกในเบราว์เซอร์นี้ (localStorage) · Export JSON เพื่อแบ็กอัป/แชร์ข้ามเครื่อง</footer>
+<footer>ข้อมูลแชร์แบบเรียลไทม์ (Supabase) · ทุกคนเห็นสถานะเดียวกัน</footer>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="auth.js"></script>
 <script src="app.js"></script>
 </body>

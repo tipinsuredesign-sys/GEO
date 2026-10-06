@@ -1,9 +1,15 @@
 /* ===========================================================
    TIPINSURE SEO — Project Tracker
-   Single-file logic: seed data + localStorage + render + edit
+   Supabase real-time + role-based access
    =========================================================== */
 
-const STORAGE_KEY = 'tipinsure_seo_tracker_v1';
+/* ---- Supabase config ---- */
+const SUPABASE_URL = 'https://xozxvotslhnoloutwyei.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_VVBxHsHBu_AnMhB0ZJxBVw_veOUonF7';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+function canEdit(){ return window.TRACKER_ROLE === 'full'; }
+function currentUser(){ return window.TRACKER_USER || ''; }
 
 /* ---- Action Plan phases (from summary doc section 5) ---- */
 const PHASES = {
@@ -147,39 +153,48 @@ const SEED = [
 ];
 
 /* ---- State ---- */
-let state = load();
+let state = { tasks: [], savedAt: null };
 
-function defaultState(){
-  return {
-    tasks: SEED.map(t => ({ ...t, status:'todo', note:'', updatedAt:null })),
-    savedAt: new Date().toISOString(),
-  };
+function mergeWithSeed(rows){
+  const byId = {};
+  (rows||[]).forEach(r => byId[r.id] = r);
+  return SEED.map(seed => {
+    const saved = byId[seed.id];
+    return saved
+      ? { ...seed, status:saved.status||'todo', note:saved.note||'', owner:saved.owner||seed.owner,
+          team:saved.team||seed.team, updated_at:saved.updated_at||null,
+          updated_by:saved.updated_by||'', completed_at:saved.completed_at||null }
+      : { ...seed, status:'todo', note:'', updated_at:null, updated_by:'', completed_at:null };
+  });
 }
 
-function load(){
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return defaultState();
-    const parsed = JSON.parse(raw);
-    // merge: keep user status/note/owner, but ensure all seed items exist
-    const byId = {};
-    (parsed.tasks || []).forEach(t => byId[t.id] = t);
-    const tasks = SEED.map(seed => {
-      const saved = byId[seed.id];
-      return saved
-        ? { ...seed, status:saved.status||'todo', note:saved.note||'', owner:saved.owner||seed.owner, team:saved.team||seed.team, updatedAt:saved.updatedAt||null }
-        : { ...seed, status:'todo', note:'', updatedAt:null };
-    });
-    return { tasks, savedAt: parsed.savedAt || null };
-  } catch(e){
-    console.warn('load failed, using defaults', e);
-    return defaultState();
+async function loadFromSupabase(){
+  const { data, error } = await sb.from('tasks').select('*');
+  if (error) console.warn('load error:', error.message);
+  const rows = data || [];
+  // seed: if DB is empty, upsert all seed tasks
+  if (rows.length === 0){
+    const seedRows = SEED.map(t => ({ id:t.id, status:'todo', team:t.team, owner:t.owner, note:'', updated_by:'', updated_at:null, completed_at:null }));
+    await sb.from('tasks').upsert(seedRows, { onConflict:'id' });
   }
+  state.tasks = mergeWithSeed(rows.length ? rows : SEED.map(t=>({id:t.id})));
+  state.savedAt = new Date().toISOString();
 }
 
-function persist(){
-  state.savedAt = new Date().toISOString();
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+async function saveTask(id, changes){
+  // auto-set completed_at when status changes to done
+  if (changes.status === 'done' && !changes.completed_at){
+    changes.completed_at = new Date().toISOString();
+  }
+  // clear completed_at if un-done
+  if (changes.status && changes.status !== 'done'){
+    changes.completed_at = null;
+  }
+  changes.updated_at = new Date().toISOString();
+  changes.updated_by = currentUser();
+  const { error } = await sb.from('tasks').upsert({ id, ...changes }, { onConflict:'id' });
+  if (error){ console.error('save error:', error.message); toast('บันทึกไม่สำเร็จ'); return; }
+  // local state will update via real-time subscription
 }
 
 /* ---- Helpers ---- */
@@ -258,7 +273,7 @@ function renderDash(){
     <div class="card stat"><div class="num" style="color:var(--amber)">${block}</div><div class="lbl">ติดขัด</div></div>
     <div class="card stat"><div class="num" style="color:var(--ink-faint)">${todo}</div><div class="lbl">ยังไม่เริ่ม</div></div>
     <div class="card progress-card">
-      <div style="display:flex;justify-content:space-between;font-size:13px"><b>ความคืบหน้าโครงการ</b><span style="color:var(--muted)">อัปเดตล่าสุด: ${fmtDate(state.savedAt)||'—'}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:13px"><b>ความคืบหน้าโครงการ</b><span style="color:var(--muted)">อัปเดตล่าสุด: ${fmtDate(state.savedAt)||'—'}${currentUser()?' · คุณ: '+escapeHtml(currentUser()):''}</span></div>
       <div class="pbar">
         <i class="done" style="width:${done/total*100}%"></i>
         <i class="prog" style="width:${prog/total*100}%"></i>
@@ -285,7 +300,24 @@ function teamMini(name, s, color){
 /* ---- Task card ---- */
 function taskCard(t){
   const noteHtml = t.note ? `<div class="t-note"><b>โน้ต:</b> ${escapeHtml(t.note)}</div>` : '';
-  const upd = t.updatedAt ? `<span class="t-updated">อัปเดต ${fmtDate(t.updatedAt)}</span>` : '';
+  const by = t.updated_by ? ` โดย ${escapeHtml(t.updated_by)}` : '';
+  const upd = t.updated_at ? `<span class="t-updated">อัปเดต ${fmtDate(t.updated_at)}${by}</span>` : '';
+  const done = t.completed_at ? `<span class="t-done-at">✅ เสร็จ ${fmtDate(t.completed_at)}</span>` : '';
+  const ro = !canEdit();
+  const statusLabel = { todo:'● ยังไม่เริ่ม', progress:'● กำลังทำ', blocked:'● ติดขัด', done:'● เสร็จ' }[t.status] || t.status;
+  const controls = ro
+    ? `<span class="status-sel status-static" data-st="${t.status}">${statusLabel}</span>
+       ${SHEET_MAP[t.id] ? `<button class="mini-btn excel" data-sheet="${t.id}">📊 ดูข้อมูล Excel</button>` : ''}
+       ${done}${upd}`
+    : `<select class="status-sel" data-st="${t.status}" data-id="${t.id}">
+            <option value="todo" ${t.status==='todo'?'selected':''}>● ยังไม่เริ่ม</option>
+            <option value="progress" ${t.status==='progress'?'selected':''}>● กำลังทำ</option>
+            <option value="blocked" ${t.status==='blocked'?'selected':''}>● ติดขัด</option>
+            <option value="done" ${t.status==='done'?'selected':''}>● เสร็จ</option>
+          </select>
+          <button class="mini-btn" data-edit="${t.id}">✎ แก้ไข / โน้ต</button>
+          ${SHEET_MAP[t.id] ? `<button class="mini-btn excel" data-sheet="${t.id}">📊 ดูข้อมูล Excel</button>` : ''}
+          ${done}${upd}`;
   return `
   <div class="task ${t.status==='done'?'done':''}" data-sev="${t.sev}" data-id="${t.id}">
     <div class="t-top">
@@ -301,15 +333,7 @@ function taskCard(t){
         <div class="t-todo">${escapeHtml(t.todo)}</div>
         ${noteHtml}
         <div class="t-controls">
-          <select class="status-sel" data-st="${t.status}" data-id="${t.id}">
-            <option value="todo" ${t.status==='todo'?'selected':''}>● ยังไม่เริ่ม</option>
-            <option value="progress" ${t.status==='progress'?'selected':''}>● กำลังทำ</option>
-            <option value="blocked" ${t.status==='blocked'?'selected':''}>● ติดขัด</option>
-            <option value="done" ${t.status==='done'?'selected':''}>● เสร็จ</option>
-          </select>
-          <button class="mini-btn" data-edit="${t.id}">✎ แก้ไข / โน้ต</button>
-          ${SHEET_MAP[t.id] ? `<button class="mini-btn excel" data-sheet="${t.id}">📊 ดูข้อมูล Excel</button>` : ''}
-          ${upd}
+          ${controls}
         </div>
       </div>
     </div>
@@ -361,12 +385,13 @@ function renderList(){
 function render(){ renderDash(); renderList(); }
 
 /* ---- Update helpers ---- */
-function updateTask(id, changes){
+async function updateTask(id, changes){
+  if (!canEdit()){ toast('สิทธิ์ดูอย่างเดียว ไม่สามารถแก้ไขได้'); return; }
+  // optimistic local update for snappy UI
   const t = state.tasks.find(x=>x.id===id);
-  if (!t) return;
-  Object.assign(t, changes, { updatedAt: new Date().toISOString() });
-  persist();
+  if (t) Object.assign(t, changes);
   render();
+  await saveTask(id, changes);
 }
 
 /* ---- Modal ---- */
@@ -495,13 +520,21 @@ function exportJSON(){
 }
 
 function importJSON(file){
+  if (!canEdit()){ toast('สิทธิ์ดูอย่างเดียว'); return; }
   const reader = new FileReader();
-  reader.onload = e => {
+  reader.onload = async e => {
     try {
       const parsed = JSON.parse(e.target.result);
       if (!parsed.tasks || !Array.isArray(parsed.tasks)) throw new Error('รูปแบบไฟล์ไม่ถูกต้อง');
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
-      state = load();
+      // write each task to Supabase
+      const rows = parsed.tasks.map(t => ({
+        id: t.id, status: t.status||'todo', team: t.team||null, owner: t.owner||'',
+        note: t.note||'', updated_by: t.updated_by||t.updatedBy||'',
+        updated_at: t.updated_at||t.updatedAt||null, completed_at: t.completed_at||t.completedAt||null
+      }));
+      const { error } = await sb.from('tasks').upsert(rows, { onConflict:'id' });
+      if (error) throw new Error(error.message);
+      await loadFromSupabase();
       render();
       toast('นำเข้าข้อมูลสำเร็จ');
     } catch(err){
@@ -538,11 +571,11 @@ function hasActiveFilter(){ return !!(filters.sev || filters.status || filters.t
 
 function exportCSV(scope){
   const tasks = scope === 'filtered' ? applyFilters(state.tasks) : state.tasks;
-  const cols = ['#','ระดับ','หมวด','ทีมหลัก','ทีมสนับสนุน','ชื่องาน','สิ่งที่ต้องทำ','สถานะ','ผู้รับผิดชอบ','โน้ต','อัปเดตล่าสุด'];
+  const cols = ['#','ระดับ','หมวด','ทีมหลัก','ทีมสนับสนุน','ชื่องาน','สิ่งที่ต้องทำ','สถานะ','ผู้รับผิดชอบ','โน้ต','อัปเดตโดย','อัปเดตล่าสุด','วันที่เสร็จ'];
   const rows = [...tasks].sort((a,b)=>a.id.localeCompare(b.id)).map(t => [
     t.id, t.sev, t.cat, t.team, (t.support||[]).join('; '),
     t.title, t.todo, STATUS_LABEL[t.status]||t.status, t.owner||'',
-    t.note||'', t.updatedAt ? fmtDate(t.updatedAt) : ''
+    t.note||'', t.updated_by||'', t.updated_at ? fmtDate(t.updated_at) : '', t.completed_at ? fmtDate(t.completed_at) : ''
   ]);
   const suffix = scope === 'filtered' ? '-filtered' : '';
   const csv = '\uFEFF' + [cols, ...rows].map(r => r.map(csvCell).join(',')).join('\r\n');
@@ -692,8 +725,27 @@ function printReport(scope){
 }
 
 /* ---- Wire up events ---- */
-function init(){
+function subscribeRealtime(){
+  sb.channel('tasks-changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, payload => {
+      // update local state from remote change
+      const row = payload.new;
+      if (!row || !row.id) return;
+      const t = state.tasks.find(x=>x.id===row.id);
+      if (t){
+        Object.assign(t, { status:row.status, team:row.team, owner:row.owner, note:row.note,
+          updated_at:row.updated_at, updated_by:row.updated_by, completed_at:row.completed_at });
+      }
+      state.savedAt = new Date().toISOString();
+      render();
+    })
+    .subscribe();
+}
+
+async function init(){
+  await loadFromSupabase();
   render();
+  subscribeRealtime();
 
   // Filters
   $('#search').addEventListener('input', e => { filters.q = e.target.value; renderList(); });
@@ -704,12 +756,17 @@ function init(){
 
   // Delegated clicks/changes on task list
   $('#taskList').addEventListener('change', e => {
+    if (!canEdit()) return;
     const sel = e.target.closest('.status-sel');
     if (sel){ updateTask(sel.dataset.id, { status: sel.value }); }
   });
   $('#taskList').addEventListener('click', e => {
     const editBtn = e.target.closest('[data-edit]');
-    if (editBtn){ openModal(editBtn.dataset.edit); return; }
+    if (editBtn){
+      if (!canEdit()){ toast('สิทธิ์ดูอย่างเดียว'); return; }
+      openModal(editBtn.dataset.edit);
+      return;
+    }
     const sheetBtn = e.target.closest('[data-sheet]');
     if (sheetBtn){ openSheet(sheetBtn.dataset.sheet); }
   });
@@ -731,7 +788,7 @@ function init(){
   $('#mCancel').addEventListener('click', closeModal);
   $('#modalBg').addEventListener('click', e => { if (e.target.id==='modalBg') closeModal(); });
   $('#mSave').addEventListener('click', () => {
-    if (!editingId) return;
+    if (!editingId || !canEdit()) return;
     updateTask(editingId, {
       status: $('#mStatus').value,
       team: $('#mTeam').value,
@@ -747,7 +804,6 @@ function init(){
   const reportMenu = $('#reportMenu');
   $('#btnReportMenu').addEventListener('click', e => {
     e.stopPropagation();
-    // update the filtered-section label to reflect current filter
     const lbl = $('#menuFilterLabel');
     const n = applyFilters(state.tasks).length;
     lbl.textContent = hasActiveFilter()
@@ -769,20 +825,34 @@ function init(){
 
   // Toolbar
   $('#btnExport').addEventListener('click', exportJSON);
-  $('#btnImport').addEventListener('click', () => $('#fileImport').click());
+  const importBtn = $('#btnImport'); if (importBtn) importBtn.addEventListener('click', () => $('#fileImport').click());
   $('#fileImport').addEventListener('change', e => {
     if (e.target.files[0]) importJSON(e.target.files[0]);
     e.target.value = '';
   });
-  $('#btnReset').addEventListener('click', () => {
-    if (confirm('รีเซ็ตข้อมูลทั้งหมดกลับเป็นค่าเริ่มต้น? (สถานะ/โน้ต/ผู้รับผิดชอบที่แก้ไว้จะหาย)\n\nแนะนำให้กด Export JSON เก็บไว้ก่อน')){
-      localStorage.removeItem(STORAGE_KEY);
-      state = defaultState();
-      persist();
+  const resetBtn = $('#btnReset');
+  if (resetBtn) resetBtn.addEventListener('click', async () => {
+    if (!canEdit()){ toast('สิทธิ์ดูอย่างเดียว'); return; }
+    if (confirm('รีเซ็ตข้อมูลทั้งหมดกลับเป็นค่าเริ่มต้น?\n\nแนะนำให้กด Export JSON เก็บไว้ก่อน')){
+      const seedRows = SEED.map(t => ({ id:t.id, status:'todo', team:t.team, owner:t.owner, note:'', updated_by:'', updated_at:null, completed_at:null }));
+      await sb.from('tasks').upsert(seedRows, { onConflict:'id' });
+      await loadFromSupabase();
       render();
       toast('รีเซ็ตเรียบร้อย');
     }
   });
+
+  // Hide write-only buttons if readonly
+  if (!canEdit()){
+    $$('.write-only').forEach(el => el.style.display = 'none');
+  }
 }
+
+// Called by auth.js after login (may re-init if role changed)
+window.onTrackerAuth = function(role, name){
+  // re-render so readonly state reflects
+  if (state.tasks.length) render();
+  if (!canEdit()) $$('.write-only').forEach(el => el.style.display = 'none');
+};
 
 document.addEventListener('DOMContentLoaded', init);
