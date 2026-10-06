@@ -8,8 +8,8 @@
   const AUTH_KEY = 'tipinsure_tracker_auth';   // 'full' | 'view'
   const USER_KEY = 'tipinsure_tracker_user';   // display name
   const PASS_ROLES = {
-    '53446552be9594329a3a9229b6a581e96545bedffe8818e4e1c9c966cd01eb15': 'full', // 560105
-    'bdaa9975de4fc82fafbc7ac1ef091dcb5bb982403f1473b401df18808ddc6076': 'full', // tezt
+    'bdaa9975de4fc82fafbc7ac1ef091dcb5bb982403f1473b401df18808ddc6076': 'full', // tezt (edit)
+    '53446552be9594329a3a9229b6a581e96545bedffe8818e4e1c9c966cd01eb15': 'view', // 560105 (read-only)
     '68647c450e8e9a25736195493c88253f51c25ad80a0e351c4b45b202a50ef11b': 'view', // Dhip (read-only)
   };
 
